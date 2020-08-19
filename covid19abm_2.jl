@@ -1184,10 +1184,6 @@ export _get_betavalue
     ag = x.ag
     #if person is isolated, they can recieve only 3 maximum contacts
     if x.iso 
-        cnt = rand() < 0.5 ? 0 : rand(1:3)
-    elseif x.shelter_in
-        #agl = [17;29;39;49;59;69;99]
-        #ag = findfirst(k->k >= x.age,agl)
         cnt = rand(nbs_shelter[ag])
     else 
         cnt = rand(nbs[ag])  # expensive operation, try to optimize
