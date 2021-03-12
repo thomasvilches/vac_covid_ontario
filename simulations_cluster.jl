@@ -18,7 +18,7 @@ using DelimitedFiles
 
 #@everywhere using covid19abm
 
-addprocs(SlurmManager(500), N=17, topology=:master_worker, exeflags="--project=.")
+addprocs(SlurmManager(250), N=8, topology=:master_worker, exeflags="--project=.")
 @everywhere using Parameters, Distributions, StatsBase, StaticArrays, Random, Match, DataFrames
 @everywhere include("covid19abm_2.jl")
 @everywhere const cv=covid19abm
@@ -47,7 +47,8 @@ function run(myp::cv.ModelParameters, nsims=1000, folderprefix="./")
     ag3 = vcat([cdr[i].g3 for i = 1:nsims]...)
     ag4 = vcat([cdr[i].g4 for i = 1:nsims]...)
     ag5 = vcat([cdr[i].g5 for i = 1:nsims]...)
-    mydfs = Dict("all" => allag, "ag1" => ag1, "ag2" => ag2, "ag3" => ag3, "ag4" => ag4, "ag5" => ag5)
+    ag6 = vcat([cdr[i].g6 for i = 1:nsims]...)
+    mydfs = Dict("all" => allag, "ag1" => ag1, "ag2" => ag2, "ag3" => ag3, "ag4" => ag4, "ag5" => ag5, "ag6" => ag6)
     #mydfs = Dict("all" => allag)
     
     ## save at the simulation and time level
@@ -87,7 +88,7 @@ function run(myp::cv.ModelParameters, nsims=1000, folderprefix="./")
 
     close(fv)=#
     #############saving vac ef
-    println("saving vac effcicacy")
+   #=  println("saving vac effcicacy")
     vac_ef_file = string(folderprefix,"/vac_ef.dat")
     fve = open(vac_ef_file,"w")
    
@@ -98,7 +99,7 @@ function run(myp::cv.ModelParameters, nsims=1000, folderprefix="./")
         println(fve,"")
     end
 
-    close(fve)
+    close(fve) =#
 
     #######saving commorbidity status
     #=println("saving commorbidity status")
@@ -132,6 +133,8 @@ function run(myp::cv.ModelParameters, nsims=1000, folderprefix="./")
     n_inf_nvac = [cdr[i].n_inf_nvac for i=1:nsims]
     n_hosp_nvac = [cdr[i].n_hosp_nvac for i=1:nsims]
     n_icu_nvac = [cdr[i].n_icu_nvac for i=1:nsims]
+
+    #R0 = [cdr[i].R0 for i=1:nsims]
     #=
     writedlm(string(folderprefix,"/general_vac_info_cov_$(replace(string(myp.cov_val), "." => "_"))_vac_ef_$(replace(string(myp.vaccine_ef), "." => "_")).dat"),[n_vac_sus1 n_vac_rec1 n_inf_vac1 n_dead_vac1 n_hosp_vac1 n_icu_vac1 n_vac_sus2 n_vac_rec2 n_inf_vac2 n_dead_vac2 n_hosp_vac2 n_icu_vac2 n_inf_nvac n_dead_nvac n_hosp_nvac n_icu_nvac])
     writedlm(string(folderprefix,"/com_vac_cov_$(replace(string(myp.cov_val), "." => "_"))_vac_ef_$(replace(string(myp.vaccine_ef), "." => "_")).dat"),[cdr[i].com_v for i=1:nsims])
@@ -149,7 +152,7 @@ function run(myp::cv.ModelParameters, nsims=1000, folderprefix="./")
     writedlm(string(folderprefix,"/ncom_vac2.dat"),[cdr[i].ncom_v2 for i=1:nsims])
     writedlm(string(folderprefix,"/com_total.dat"),[cdr[i].com_t for i=1:nsims])
     writedlm(string(folderprefix,"/ncom_total.dat"),[cdr[i].ncom_t for i=1:nsims])
-    
+    writedlm(string(folderprefix,"/R0.dat"),[cdr[i].R0 for i=1:nsims])
     
     writedlm(string(folderprefix,"/init_iso.dat"),[cdr[i].iniiso for i=1:nsims])
 
@@ -266,16 +269,15 @@ function calibrate_robustness(beta, reps, prov=:ontario)
 end
 
 
-function create_folder(ip::cv.ModelParameters)
+function create_folder(ip::cv.ModelParameters,vaccine="none",value="none",index="0")
     #strategy = ip.apply_vac_com == true ? "T" : "UT"
-    strategy = ip.vaccinating == true ? "$(ip.days_before)" : "NV"
+   #=  strategy = ip.vaccinating == true ? "$(ip.sec_dose_delay)" : "NV"
+    n_strains = ip.ins_sec_strain ? 2 : 1 =#
     #RF = string("heatmap/results_prob_","$(replace(string(ip.β), "." => "_"))","_vac_","$(replace(string(ip.vaccine_ef), "." => "_"))","_herd_immu_","$(ip.herd)","_$strategy","cov_$(replace(string(ip.cov_val)))") ## 
-    main_folder = "/data/thomas-covid/canada_2"
-    if ip.set_g_cov
-        RF = string(main_folder,"/results_prob_","$(replace(string(ip.β), "." => "_"))","_vac_","$(replace(string(ip.vac_efficacy_fd), "." => "_"))","_herd_immu_","$(ip.herd)","_$strategy","_cov_$(replace(string(ip.cov_val), "." => "_"))") ## 
-    else
-        RF = string(main_folder,"/results_prob_","$(replace(string(ip.β), "." => "_"))","_vac_","$(replace(string(ip.vac_efficacy_fd), "." => "_"))","_herd_immu_","$(ip.herd)","_$(ip.vac_period)_$(ip.decrease_protection)","_$strategy") ##  
-    end
+    main_folder = "/data/thomas-covid/review_canada"
+    
+    RF = string(main_folder,"/results_prob_","$(replace(string(ip.β), "." => "_"))","_herd_immu_","$(ip.herd)_vac_","$vaccine","_$value","_$index")
+    
     if !Base.Filesystem.isdir(RF)
         Base.Filesystem.mkpath(RF)
     end
@@ -283,12 +285,20 @@ function create_folder(ip::cv.ModelParameters)
 end
 
 ## now, running vaccine and herd immunity, focusing and not focusing in comorbidity, first  argument turns off vac
-function run_param_fix(herd_im_v = [0],fs=0.0,vaccinate = false,v_e = 0.0,drop = 0.0,vfd = v_e/2.0,vp=0,rp=0.0,days_b = [0],nsims=1000)
-    for h_i = herd_im_v,days_b1 = days_b
-        bd = Dict(3=>0.039,5=>0.0401)
+function run_param_fix(herd_im_v = [0],fs=0.0,fm=0.0,index = "0",time_inc=999,minc=0.0,vaccinate = false,sdd=21,vaccine="none",value="none",days_v::Array{Array{Int64,1},1}=[[0]],inf_v::Array{Array{Float64,1},1}=[[0.0]],symp_v::Array{Array{Float64,1},1}=[[0.0]],sev_v::Array{Array{Float64,1},1}=[[0.0]],nsims=1000)
+    
+
+    for h_i = herd_im_v
+        #bd = Dict(5=>0.156, 10=>0.1668) #1.15
+        #bd = Dict(5=>0.162, 10=>0.173) #1.2
+        #bd = Dict(5=>0.148, 10=>0.161) #1.1
+        bd = Dict(5=>0.1524, 10=>0.1627) #1.119
+        init_con = Dict(5=>3, 10=>4)
         b = bd[h_i]
-        @everywhere ip = cv.ModelParameters(β=$b,fsevere = $fs,vaccinating = $vaccinate, days_before = $days_b1,vac_efficacy = $v_e,herd = $(h_i),vac_efficacy_fd=$vfd,drop_rate = $drop,vac_period = $vp,decrease_protection = $rp)
-        folder = create_folder(ip)
+        ic = init_con[h_i]
+        @everywhere ip = cv.ModelParameters(β=$b,fsevere = $fs,fmild = $fm,vaccinating = $vaccinate,herd = $(h_i),single_dose=false,drop_rate = 0.0,sec_dose_delay = $sdd,vac_period = $sdd,
+        initialinf = $ic,days_to_protection=$days_v,vac_efficacy_inf = $inf_v,vac_efficacy_symp = $symp_v,vac_efficacy_sev = $sev_v,time_increase=$time_inc,much_increase=$minc)
+        folder = create_folder(ip,vaccine,value,index)
 
         #println("$v_e $(ip.vaccine_ef)")
         run(ip,nsims,folder)
@@ -297,34 +307,36 @@ end
 
 
 ## now, running vaccine and herd immunity, focusing and not focusing in comorbidity, first  argument turns off vac
-function run_param(b,herd_im_v = [0],fs=0.0,vaccinate = false,days_b = [0],vac_ef_v = [0.0],nsims=1000)
-    for v_e = vac_ef_v, h_i = herd_im_v,days_b1 = days_b
-        #bd = Dict(5=>0.074, 10=>0.076, 20=>0.089)
-        #b = bd[h_i]
-        @everywhere ip = cv.ModelParameters(β=$b,fsevere = $fs,fmild=$fs,vaccinating = $vaccinate, days_before = $days_b1,vac_efficacy = $v_e,herd = $(h_i))
-        folder = create_folder(ip)
+function run_param(b = 0,h_i=0,fs=0.0,fm=0.0,index = "0",time_inc=999,minc=0.0,vaccinate = false,sdd=21,vaccine="none",value="none",days_v::Array{Array{Int64,1},1}=[[0]],inf_v::Array{Array{Float64,1},1}=[[0.0]],symp_v::Array{Array{Float64,1},1}=[[0.0]],sev_v::Array{Array{Float64,1},1}=[[0.0]],nsims=1000)
+    
 
-        #println("$v_e $(ip.vaccine_ef)")
-        run(ip,nsims,folder)
-    end
+
+    init_con = Dict(5=>3, 10=>4)
+    ic = init_con[h_i]
+    @everywhere ip = cv.ModelParameters(β=$b,fsevere = $fs,fmild = $fm,vaccinating = $vaccinate,herd = $(h_i),single_dose=false,drop_rate = 0.0,sec_dose_delay = $sdd,vac_period = $sdd,
+    initialinf = $ic,days_to_protection=$days_v,vac_efficacy_inf = $inf_v,vac_efficacy_symp = $symp_v,vac_efficacy_sev = $sev_v,time_increase=$time_inc,much_increase=$minc)
+    folder = create_folder(ip,vaccine,value,index)
+
+    #println("$v_e $(ip.vaccine_ef)")
+    run(ip,nsims,folder)
+   
 end
 
-#= 
-run_param_fix([5],1.0,true,0.95,0.0,0.3,21,0.0)
-run_param_fix([5],1.0,true,0.95,0.0,0.3,21,0.5)
-run_param_fix([5],1.0,true,0.95,0.0,0.6,21,0.0)
-run_param_fix([5],1.0,true,0.95,0.0,0.6,21,0.5)
 
 
-run_param_fix([5],1.0,true,0.95,0.0,0.3,28,0.0)
-run_param_fix([5],1.0,true,0.95,0.0,0.3,28,0.5)
-run_param_fix([5],1.0,true,0.95,0.0,0.6,28,0.0)
-run_param_fix([5],1.0,true,0.95,0.0,0.6,28,0.5) =#
 
-run_param_fix([5],1.0)
-run_param_fix([5],1.0,true,0.95,0.0,0.52,21,0.0)
-run_param_fix([5],1.0,true,0.95,0.0,0.52,21,0.5)
-run_param_fix([5],1.0,true,0.95,0.0,0.52,21,1.0)
-run_param_fix([5],1.0,true,0.95,0.0,0.52,28,0.0)
-run_param_fix([5],1.0,true,0.95,0.0,0.52,28,0.5)
-run_param_fix([5],1.0,true,0.95,0.0,0.52,28,1.0)
+## now, running vaccine and herd immunity, focusing and not focusing in comorbidity, first  argument turns off vac
+function run_calibration(beta = 0.0345,herd_im_v = 0,cali1=false,cali = false,fs = 0.0,nsims=1000)
+    init_con = Dict(5=>3, 10=>4)
+    ic = init_con[herd_im_v]
+    @everywhere ip = cv.ModelParameters(β=$beta,initialinf = $ic,herd = $herd_im_v,modeltime = 30,fsevere = $fs,fmild=$fs,calibration=$cali1,calibration2 = $cali)
+    folder = create_folder(ip)
+
+    #println("$v_e $(ip.vaccine_ef)")
+    run(ip,nsims,folder)
+
+    R0 = readdlm(string(folder,"/R0.dat"),header=false)[:,1]
+    m = mean(R0)
+    sd = std(R0)
+    println("mean R0: $(m) with std: $(sd)")
+end
