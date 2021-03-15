@@ -104,11 +104,13 @@ end
 
     decrease_protection::Float64 = 0.0
 
-    fd_1::Array{Int64,1} = [0;1; 2; 7; 9; 8; 6; 4; 7; 9; 9; 12; 14; 16; 20; 25; 30; 35; 40; 45; 50] #daily vaccination rate
+    fd_1::Array{Int64,1} = [0;1; 1; 2; 3; 8; 8; 8; 6; 3; 8; 6; 11; 16; 22; 24; 32; 38; 45; 50] #daily vaccination rate
+    
     fd_2::Int64 = 0 #first-dose doses when second one is given
     sd1::Array{Int64,1} = fd_1 #second-dose doses
     sec_dose_delay::Int64 = vac_period #delay in second dose
-    days_change_vac_rate::Array{Int64,1} = [75;map(y->y+75,[14;21;28;35;42;49;56;63;70;77;84;91;98;105; 112; 119; 126; 133; 140])] #when the vaccination rate is changed
+    
+    days_change_vac_rate::Array{Int64,1} = [75;map(y->y+75,map(x->(x-1)*6+1, 2:length(fd_1)-1))] #when the vaccination rate is changed
     
 
     max_vac_delay::Int64 = 42
@@ -1338,8 +1340,8 @@ function move_to_hospicu(x::Human)
     mh = [0.0005, 0.0022, 0.0057, 0.0160, 0.0401, 0.0696, 0.0893, 0.11]
     mc = [0.0009,0.0045,0.0115,0.0319,0.0801,0.1392,0.1786,0.22]=#
 
-    #g = findfirst(y-> y >= x.age,age_thres) =#
-    aux = [0:4, 5:19, 20:44, 45:54, 55:64, 65:74, 75:85, 85:99]
+    #g = findfirst(y-> y >= x.age,age_thres) =#     #75-85
+    aux = [0:4, 5:19, 20:44, 45:54, 55:64, 65:74, 75:84, 85:99]
    
     mh = [0.001, 0.001, 0.0015, 0.0065, 0.01, 0.02, 0.0735, 0.38]
     mc = [0.002,0.002,0.0022, 0.008, 0.022, 0.04, 0.08, 0.4]
